@@ -152,8 +152,11 @@ All ~60 tests pass with no AWS or Google credentials needed (everything mocked).
 
 ### 3. Build
 
+you need aws cli and add it to you variable env
 ```bash
 winget install Amazon.SAM-CLI
+```
+```bash
 sam build --template-file infrastructure/template.yaml
 ```
 
