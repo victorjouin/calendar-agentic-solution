@@ -153,6 +153,7 @@ All ~60 tests pass with no AWS or Google credentials needed (everything mocked).
 ### 3. Build
 
 ```bash
+winget install Amazon.SAM-CLI
 sam build --template-file infrastructure/template.yaml
 ```
 
