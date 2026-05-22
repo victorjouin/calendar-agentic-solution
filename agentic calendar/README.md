@@ -155,6 +155,7 @@ All ~60 tests pass with no AWS or Google credentials needed (everything mocked).
 you need aws cli and add it to you variable env
 ```bash
 winget install Amazon.SAM-CLI
+winget install Amazon.AWSCLI
 ```
 configure your AWS account
 ```bash
