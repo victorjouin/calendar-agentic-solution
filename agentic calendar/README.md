@@ -156,6 +156,11 @@ you need aws cli and add it to you variable env
 ```bash
 winget install Amazon.SAM-CLI
 ```
+configure your AWS account
+```bash
+aws configure
+```
+
 ```bash
 sam build --template-file infrastructure/template.yaml
 ```
