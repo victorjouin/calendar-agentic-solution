@@ -1,6 +1,6 @@
 # 🗓️ Calendar-Agent
 
-> An agentic AI assistant that fully manages your Google Calendar through a conversational web chat interface — powered by Amazon Bedrock and running on the AWS free tier.
+> An agentic AI assistant that fully manages your Google Calendar through a conversational web chat interface — powered by Amazon Bedrock (Nova Lite) and running on the AWS free tier.
 
 ---
 
@@ -48,14 +48,14 @@ Preferences apply for the duration of your session.
 ## Architecture
 
 ```
-Browser (S3 Static Site)
+Browser (local HTML or S3)
     │
     │  HTTPS REST
     ▼
-AWS API Gateway
+AWS API Gateway          ← "The front door" — routes HTTP requests
     │
     ▼
-AWS Lambda (Python 3.11)
+AWS Lambda (Python 3.14) ← "The brain" — runs your code on demand
     ├── API Handler          — routing & serialisation
     ├── Agent Orchestrator   — conversation & intent routing
     ├── Bedrock Client       — NLU via Amazon Bedrock (Nova Lite)
@@ -63,16 +63,28 @@ AWS Lambda (Python 3.11)
     └── Auth Manager         — Google OAuth 2.0 + AWS SSM
 ```
 
-**Everything runs on the AWS free tier.** No paid third-party services.
+### How the services work together
 
-| Component | Service |
-|-----------|---------|
-| LLM | Amazon Bedrock (Nova Lite) |
-| Backend | AWS Lambda + API Gateway |
-| Token storage | AWS SSM Parameter Store |
-| Frontend hosting | AWS S3 static website |
-| Calendar | Google Calendar API v3 |
-| Auth | Google OAuth 2.0 |
+| Service | Role | What it does |
+|---------|------|--------------|
+| **API Gateway** | Front door | Receives HTTP requests from the browser, routes to Lambda |
+| **Lambda** | Backend logic | Runs your Python code on demand — no server to manage |
+| **Bedrock** | AI understanding | Converts natural language into structured actions |
+| **SSM Parameter Store** | Token vault | Stores Google OAuth tokens encrypted — persistent login |
+| **S3** *(optional)* | Frontend hosting | Serves the HTML/CSS/JS chat UI |
+| **CloudFormation** | Infrastructure | Created all resources from `template.yaml` |
+| **IAM Role** | Permissions | Gives Lambda access to Bedrock and SSM |
+
+### Request flow
+
+1. You type a message in the browser
+2. Browser sends `POST /chat` to API Gateway
+3. API Gateway triggers Lambda
+4. Lambda gets your Google OAuth token from SSM
+5. Lambda calls Bedrock → understands your intent
+6. Lambda calls Google Calendar API → reads/writes events
+7. Lambda returns the response through API Gateway
+8. Browser displays the agent's reply
 
 ---
 
@@ -90,11 +102,12 @@ calendar-agent/
 │   └── config.py            # Environment variable configuration
 ├── frontend/
 │   ├── index.html           # Chat UI
-│   ├── style.css
-│   └── app.js
+│   ├── style.css            # Styles
+│   └── app.js               # Frontend logic (OAuth, API calls, rendering)
 ├── infrastructure/
 │   ├── template.yaml        # AWS SAM template
-│   └── deploy.sh            # Deployment script
+│   ├── deploy.sh            # Deployment script
+│   └── destroy.sh           # Teardown script — deletes all AWS resources
 ├── tests/
 │   ├── test_auth_manager.py
 │   ├── test_bedrock_client.py
@@ -110,70 +123,118 @@ calendar-agent/
 
 ### Prerequisites
 
-- Python 3.11+
-- [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured (`aws configure`)
+- Python 3.14+ (or 3.11+)
+- [AWS CLI v2](https://docs.aws.amazon.com/cli/latest/userguide/install-cliv2.html) configured (`aws configure`)
 - [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html)
-- A [Google Cloud project](https://console.cloud.google.com/) with the Calendar API enabled and an OAuth 2.0 client configured
+- A [Google Cloud project](https://console.cloud.google.com/) with Calendar API enabled and OAuth 2.0 credentials
 
-### 1. Clone the repository
+> **Note**: Amazon Bedrock models auto-enable on first call — no manual model access step needed.
+
+### 1. Clone and install
 
 ```bash
 git clone https://github.com/your-username/calendar-agent.git
 cd calendar-agent
-```
-
-### 2. Install dependencies
-
-```bash
+python -m venv .venv
+.venv\Scripts\activate          # Windows
+# source .venv/bin/activate     # macOS/Linux
 pip install -r requirements.txt
+pip install pytest
 ```
 
-### 3. Run the tests
+### 2. Run tests
 
 ```bash
-python -m pytest tests/ -v
+pytest tests/ -v
 ```
 
-### 4. Deploy to AWS
+All ~60 tests pass with no AWS or Google credentials needed (everything mocked).
+
+### 3. Build
 
 ```bash
-chmod +x infrastructure/deploy.sh
-./infrastructure/deploy.sh
+sam build --template-file infrastructure/template.yaml
 ```
 
-The script will prompt you for:
+### 4. Deploy
+
+```bash
+sam deploy --guided --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM
+```
+
+SAM prompts for:
+- Stack name (e.g. `sam-app`)
+- Region (e.g. `eu-central-1`)
 - Google OAuth Client ID and Secret
-- OAuth redirect URI
-- Bedrock model ID (default: `amazon.nova-lite-v1:0`)
+- Bedrock model ID (default: `amazon.nova-lite-v1:0`, use `eu.amazon.nova-lite-v1:0` for EU regions)
 
-After deployment, the script outputs the API Gateway URL and the OAuth callback URL to register in Google Cloud Console.
+Answer **Y** to all "no authentication" prompts.
 
-### 5. Register the OAuth callback
+### 5. Get your API URL
 
-In [Google Cloud Console](https://console.cloud.google.com/):
-1. Go to **APIs & Services → Credentials**
-2. Open your OAuth 2.0 Client
-3. Add the `OAuthCallbackUrl` from the deployment output to **Authorised redirect URIs**
+```bash
+aws cloudformation describe-stacks --stack-name sam-app --query "Stacks[0].Outputs" --output table
+```
 
-### 6. Deploy the frontend
+### 6. Register OAuth redirect URI
 
-Update `API_BASE_URL` in `frontend/app.js` with the `ApiBaseUrl` from the deployment output, then upload the `frontend/` folder to an S3 bucket with static website hosting enabled.
+Copy the `OAuthCallbackUrl` from the outputs and add it to:
+Google Cloud Console → APIs & Services → Credentials → your OAuth client → Authorised redirect URIs
+
+### 7. Update frontend
+
+Edit `frontend/app.js`:
+- Set `API_BASE_URL` to your `ApiBaseUrl` from step 5
+- Set `GOOGLE_CLIENT_ID` to your Google Client ID
+
+### 8. Test it
+
+Open `frontend/index.html` in your browser, sign in with Google, and start chatting.
 
 ---
 
 ## Configuration
 
-All configuration is managed via environment variables (set in `infrastructure/template.yaml` or your Lambda console):
-
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `BEDROCK_MODEL_ID` | `amazon.nova-lite-v1:0` | Bedrock model to use |
+| `BEDROCK_MODEL_ID` | `amazon.nova-lite-v1:0` | Bedrock model (use `eu.amazon.nova-lite-v1:0` for EU) |
+| `BEDROCK_REGION` | `us-east-1` | Region for Bedrock API calls |
 | `GOOGLE_CLIENT_ID` | *(required)* | Google OAuth client ID |
 | `GOOGLE_CLIENT_SECRET` | *(required)* | Google OAuth client secret |
 | `GOOGLE_REDIRECT_URI` | *(required)* | OAuth callback URL |
 | `SSM_TOKEN_PATH` | `/calendar-agent/oauth` | SSM path for token storage |
 | `DEFAULT_BUFFER_MINUTES` | `15` | Default buffer between meetings |
 | `DEFAULT_CONFIRMATION_MODE` | `true` | Ask before write/delete by default |
+
+---
+
+## Destroy All Resources
+
+To tear down everything:
+
+```bash
+sam delete --stack-name sam-app --region eu-central-1
+```
+
+Or use the script:
+
+```bash
+bash infrastructure/destroy.sh
+```
+
+This removes: Lambda, API Gateway, IAM role, SSM parameter, and CloudWatch logs.
+
+---
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `ValidationException` from Bedrock | Use `eu.amazon.nova-lite-v1:0` for EU regions |
+| `redirect_uri_mismatch` from Google | Register the exact callback URL in Google Cloud Console |
+| `Missing Authentication Token` | You're hitting a path that doesn't exist (e.g. `/Prod` instead of `/Prod/health`) |
+| `Forbidden` on root path | Normal — no route defined at `/`. Use `/health`, `/chat`, or `/oauth/callback` |
+| Google consent shows "unverified app" | Click Advanced → Go to Calendar-Agent (unsafe) — normal for development |
 
 ---
 

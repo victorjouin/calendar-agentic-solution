@@ -1,0 +1,195 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: "Calendar-Agent \u2014 Agentic Google Calendar assistant Single Lambda\
+  \ function + API Gateway + SSM Parameter Store\n"
+Globals:
+  Function:
+    Runtime: python3.14
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        LOG_LEVEL:
+          Ref: LogLevel
+        BEDROCK_MODEL_ID:
+          Ref: BedrockModelId
+        BEDROCK_REGION:
+          Ref: BedrockRegion
+        GOOGLE_CLIENT_ID:
+          Ref: GoogleClientId
+        GOOGLE_CLIENT_SECRET:
+          Ref: GoogleClientSecret
+        GOOGLE_REDIRECT_URI:
+          Ref: GoogleRedirectUri
+        SSM_TOKEN_PATH:
+          Ref: SsmTokenPath
+        FRONTEND_URL:
+          Ref: FrontendUrl
+        DEFAULT_BUFFER_MINUTES: '15'
+        DEFAULT_WORKING_HOURS_START_HOUR: '9'
+        DEFAULT_WORKING_HOURS_END_HOUR: '18'
+        DEFAULT_CONFIRMATION_MODE: 'true'
+Parameters:
+  LogLevel:
+    Type: String
+    Default: INFO
+    AllowedValues:
+    - DEBUG
+    - INFO
+    - WARNING
+    - ERROR
+    Description: Python logging level
+  BedrockModelId:
+    Type: String
+    Default: amazon.nova-lite-v1:0
+    Description: Amazon Bedrock model ID
+  BedrockRegion:
+    Type: String
+    Default: us-east-1
+    Description: AWS region where Bedrock is available
+  GoogleClientId:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth 2.0 client ID
+  GoogleClientSecret:
+    Type: String
+    NoEcho: true
+    Description: Google OAuth 2.0 client secret
+  GoogleRedirectUri:
+    Type: String
+    Description: "OAuth 2.0 redirect URI \u2014 must match the URI registered in Google\
+      \ Cloud Console. Format: https://<api-gateway-id>.execute-api.<region>.amazonaws.com/Prod/oauth/callback\n"
+  SsmTokenPath:
+    Type: String
+    Default: /calendar-agent/oauth
+    Description: SSM Parameter Store path for storing OAuth tokens
+  FrontendUrl:
+    Type: String
+    Default: ''
+    Description: 'URL of the frontend (S3 website URL). Used for OAuth redirect after
+      login. Leave empty during initial deployment; update after frontend is deployed.
+
+      '
+Resources:
+  CalendarAgentFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: calendar-agent
+      CodeUri: CalendarAgentFunction
+      Handler: backend.lambda_handler.handler
+      Description: "Calendar-Agent Lambda \u2014 handles chat and OAuth callback"
+      Role:
+        Fn::GetAtt:
+        - CalendarAgentRole
+        - Arn
+      Events:
+        ChatEndpoint:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: CalendarAgentApi
+            Path: /chat
+            Method: POST
+        OAuthCallback:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: CalendarAgentApi
+            Path: /oauth/callback
+            Method: GET
+        HealthCheck:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: CalendarAgentApi
+            Path: /health
+            Method: GET
+        CorsOptions:
+          Type: Api
+          Properties:
+            RestApiId:
+              Ref: CalendarAgentApi
+            Path: /{proxy+}
+            Method: OPTIONS
+    Metadata:
+      SamResourceId: CalendarAgentFunction
+  CalendarAgentApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: calendar-agent-api
+      StageName: Prod
+      Cors:
+        AllowMethods: '''GET,POST,OPTIONS'''
+        AllowHeaders: '''Content-Type,Authorization'''
+        AllowOrigin: '''*'''
+      GatewayResponses:
+        DEFAULT_4XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+        DEFAULT_5XX:
+          ResponseParameters:
+            Headers:
+              Access-Control-Allow-Origin: '''*'''
+  CalendarAgentRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: lambda.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+      - PolicyName: CalendarAgentPolicy
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - ssm:GetParameter
+            - ssm:PutParameter
+            Resource:
+              Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter${SsmTokenPath}*
+          - Effect: Allow
+            Action:
+            - bedrock:InvokeModel
+            - bedrock:Converse
+            Resource: '*'
+  OAuthTokenParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name:
+        Ref: SsmTokenPath
+      Type: String
+      Value: '{}'
+      Description: 'Placeholder for Calendar-Agent OAuth tokens. This value is overwritten
+        by the application after the user authenticates.
+
+        '
+Outputs:
+  ApiBaseUrl:
+    Description: "API Gateway base URL \u2014 use this as the backend endpoint in\
+      \ the frontend"
+    Value:
+      Fn::Sub: https://${CalendarAgentApi}.execute-api.${AWS::Region}.amazonaws.com/Prod
+    Export:
+      Name: CalendarAgentApiBaseUrl
+  ChatEndpointUrl:
+    Description: Full URL for the chat endpoint
+    Value:
+      Fn::Sub: https://${CalendarAgentApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/chat
+  OAuthCallbackUrl:
+    Description: "OAuth callback URL \u2014 register this in Google Cloud Console\
+      \ as an authorised redirect URI\n"
+    Value:
+      Fn::Sub: https://${CalendarAgentApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/oauth/callback
+  LambdaFunctionArn:
+    Description: ARN of the Calendar-Agent Lambda function
+    Value:
+      Fn::GetAtt:
+      - CalendarAgentFunction
+      - Arn
