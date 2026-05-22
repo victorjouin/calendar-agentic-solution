@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Calendar-Agent</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ── Auth Screen ──────────────────────────────────────────────────────── -->
+  <div id="auth-screen" class="screen" aria-live="polite">
+    <div class="auth-card">
+      <div class="logo" aria-hidden="true">🗓️</div>
+      <h1>Calendar-Agent</h1>
+      <p class="tagline">Your AI-powered Google Calendar assistant</p>
+      <ul class="feature-list" aria-label="Key features">
+        <li>📋 Daily &amp; weekly briefings</li>
+        <li>✏️ Create events in plain language</li>
+        <li>🎯 Smart time slot suggestions</li>
+        <li>🗑️ Delete &amp; reschedule with confirmation</li>
+      </ul>
+      <button
+        id="sign-in-btn"
+        class="btn btn-primary"
+        data-testid="sign-in-button"
+        aria-label="Sign in with Google to connect your calendar"
+      >
+        Sign in with Google
+      </button>
+      <p id="auth-error" class="error-msg hidden" role="alert" aria-live="assertive"></p>
+    </div>
+  </div>
+
+  <!-- ── Chat Screen ───────────────────────────────────────────────────────── -->
+  <div id="chat-screen" class="screen hidden" aria-label="Calendar-Agent chat">
+
+    <!-- Header -->
+    <header class="chat-header" role="banner">
+      <div class="header-left">
+        <span class="header-logo" aria-hidden="true">🗓️</span>
+        <span class="header-title">Calendar-Agent</span>
+      </div>
+      <div class="header-right">
+        <span id="status-indicator" class="status-dot" title="Connected" aria-label="Status: connected"></span>
+        <button
+          id="sign-out-btn"
+          class="btn btn-ghost"
+          data-testid="sign-out-button"
+          aria-label="Sign out"
+        >
+          Sign out
+        </button>
+      </div>
+    </header>
+
+    <!-- Message history -->
+    <main
+      id="message-list"
+      class="message-list"
+      role="log"
+      aria-label="Conversation history"
+      aria-live="polite"
+      aria-relevant="additions"
+    >
+      <!-- Messages injected by app.js -->
+    </main>
+
+    <!-- Typing indicator (hidden by default) -->
+    <div id="typing-indicator" class="typing-indicator hidden" aria-live="polite" aria-label="Agent is thinking">
+      <span class="dot"></span>
+      <span class="dot"></span>
+      <span class="dot"></span>
+    </div>
+
+    <!-- Input area -->
+    <footer class="chat-footer" role="contentinfo">
+      <form id="chat-form" class="chat-form" data-testid="chat-form" aria-label="Send a message">
+        <label for="message-input" class="sr-only">Type your message</label>
+        <textarea
+          id="message-input"
+          class="message-input"
+          data-testid="message-input"
+          placeholder="Ask me anything about your calendar…"
+          rows="1"
+          maxlength="2000"
+          aria-label="Message input"
+          aria-required="true"
+          autocomplete="off"
+          spellcheck="true"
+        ></textarea>
+        <button
+          type="submit"
+          id="send-btn"
+          class="btn btn-send"
+          data-testid="send-button"
+          aria-label="Send message"
+          disabled
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="20" height="20" aria-hidden="true">
+            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+          </svg>
+        </button>
+      </form>
+      <p class="input-hint">Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line</p>
+    </footer>
+
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
